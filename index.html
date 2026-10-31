@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>雷光ジェネレーター | カプラメー</title>
+<meta name="description" content="パラメータで雷エフェクトを作り、発生から消えるまでを透過PNGの連番で書き出すツール。">
+<meta name="theme-color" content="#13151a">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=IBM+Plex+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen compositing tool. Dark preview stage on the left, parameter rail on the right; stacks on phones. Single dark look by choice (white bolts need a dark stage). */
+:root{
+  --bg:#13151a;
+  --panel:#1a1d24;
+  --raise:#232732;
+  --line:#2d3240;
+  --fg:#e9e6dc;
+  --muted:#8c91a0;
+  --accent:#f2d24a;
+  --accent-ink:#1c1803;
+  --warn:#ff8f5e;
+  --f-display:"Dela Gothic One","IBM Plex Sans JP","Hiragino Sans",sans-serif;
+  --f-body:"IBM Plex Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+[hidden]{display:none!important}
+body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:13px;line-height:1.5}
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));box-sizing:border-box}
+header{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;padding-block:12px;border-bottom:1px solid var(--line)}
+h1{font-family:var(--f-display);font-weight:400;font-size:20px;margin:0;letter-spacing:.02em;color:var(--fg)}
+h1 span{color:var(--accent)}
+.home{color:var(--muted);text-decoration:none;font-size:13px;letter-spacing:.06em;min-height:32px;display:inline-flex;align-items:center}
+.home:hover{color:var(--accent)}
+.spec{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.warn{font-size:12px;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:999px;padding:2px 10px}
+.grow{flex:1}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.status{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+button,select,input{font:inherit;color:inherit}
+.btn{background:var(--raise);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;min-height:0;padding-block:12px}
+.stage{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0}
+.view{flex:1;min-height:0;position:relative;border-radius:8px;overflow:hidden;display:grid;place-items:center;border:1px solid var(--line)}
+.view.checker{background-color:#2a2d35;background-image:conic-gradient(#34373f 25%,#272a31 0 50%,#34373f 0 75%,#272a31 0);background-size:24px 24px}
+.view.black{background:#000}
+.view.gray{background:#4b4f58}
+canvas#cv{display:block;outline:1px dashed rgba(255,255,255,.28)}
+.zoom{position:absolute;right:10px;bottom:8px;font-family:var(--f-mono);font-size:11px;color:#c9ccd4;background:rgba(0,0,0,.45);padding:1px 6px;border-radius:4px}
+.phase{position:absolute;left:10px;top:8px;font-size:12px;color:#c9ccd4;background:rgba(0,0,0,.45);padding:1px 8px;border-radius:4px}
+
+.transport{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.scrub{flex:1;min-width:160px;display:flex;flex-direction:column;gap:3px}
+.scrub input{width:100%;margin:0;accent-color:var(--accent)}
+.tl{display:flex;height:4px;border-radius:2px;overflow:hidden;background:var(--raise)}
+.tl i{display:block;height:100%}
+.tl .g{background:#8fb7ff}.tl .h{background:var(--accent)}.tl .d{background:#e07a5f}.tl .s{background:#555b69}
+.fno{font-family:var(--f-mono);font-variant-numeric:tabular-nums;min-width:76px;text-align:right}
+select{background:var(--raise);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.legend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
+
+.panel{overflow-y:auto;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.presets{display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}
+.presets .lbl{width:100%;font-size:11px;color:var(--muted);letter-spacing:.08em}
+.presets .btn{padding:5px 10px;font-size:12px}
+details.grp{border-bottom:1px solid var(--line)}
+details.grp summary{cursor:pointer;padding:10px 14px;font-weight:700;font-size:12px;letter-spacing:.06em;list-style:none;display:flex;justify-content:space-between}
+details.grp summary::-webkit-details-marker{display:none}
+details.grp summary::after{content:"＋";color:var(--muted);font-weight:400}
+details.grp[open] summary::after{content:"－"}
+.rows{display:grid;gap:8px;padding:0 14px 14px}
+.row{display:grid;grid-template-columns:108px minmax(0,1fr) 66px;align-items:center;gap:8px}
+.row label{color:var(--fg);font-size:12px}
+.row input[type=range]{width:100%;margin:0;accent-color:var(--accent)}
+.num{width:100%;box-sizing:border-box;background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px;text-align:right;font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.row.wide{grid-template-columns:108px minmax(0,1fr)}
+.row.wide select,.row.wide input[type=text]{width:100%;box-sizing:border-box;background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:5px 8px}
+.seedbox{display:flex;gap:6px}
+.seedbox .num{text-align:left}
+.seedbox .btn{padding:4px 10px;font-size:12px}
+.sw{position:relative;width:38px;height:22px;justify-self:start}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.sw span{position:absolute;inset:0;border-radius:999px;background:var(--raise);border:1px solid var(--line);pointer-events:none;transition:background .15s}
+.sw span::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:transform .15s,background .15s}
+.sw input:checked+span{background:color-mix(in srgb,var(--accent) 30%,var(--raise))}
+.sw input:checked+span::after{transform:translateX(16px);background:var(--accent)}
+.sw input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.rowbtn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:4px}
+.hint{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.note{padding:12px 14px 16px;color:var(--muted);font-size:12px}
+.note kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px}
+
+@media (max-width:860px){
+  html,body{height:auto}
+  .app{height:auto}
+  main{grid-template-columns:1fr}
+  .view{flex:none;height:60vh}
+  .panel{overflow:visible}
+}
+@media (prefers-reduced-motion:reduce){.sw span,.sw span::after{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <a class="home" href="/tools/lightning-generator/">← カプラメー</a>
+    <h1>雷光<span>ジェネレーター</span></h1>
+    <div class="spec" id="spec"></div>
+    <div class="warn" id="warn" hidden>はみ出しあり：振れ幅・枝の長さ・束の広がりを下げるか、サイズを広げてください</div>
+    <div class="grow"></div>
+    <div class="actions">
+      <span class="status" id="status"></span>
+      <button class="btn" id="savePng" type="button">このフレームをPNG</button>
+      <button class="btn primary" id="saveZip" type="button">連番PNGをzipで保存</button>
+    </div>
+  </header>
+  <main>
+    <section class="stage">
+      <div class="view checker" id="view">
+        <canvas id="cv"></canvas>
+        <div class="phase" id="phase"></div>
+        <div class="zoom" id="zoom"></div>
+      </div>
+      <div class="transport">
+        <button class="btn" id="prev" type="button" aria-label="前のフレーム">◀︎</button>
+        <button class="btn" id="play" type="button">再生</button>
+        <button class="btn" id="next" type="button" aria-label="次のフレーム">▶︎</button>
+        <div class="scrub">
+          <input type="range" id="scrub" min="0" max="0" value="0" aria-label="フレーム">
+          <div class="tl" id="tl"></div>
+        </div>
+        <span class="fno" id="fno"></span>
+        <select id="speed" aria-label="再生速度">
+          <option value="1">等倍</option>
+          <option value="0.5">1/2速</option>
+          <option value="0.25">1/4速</option>
+        </select>
+        <select id="bg" aria-label="背景">
+          <option value="checker">市松</option>
+          <option value="black">黒</option>
+          <option value="gray">グレー</option>
+        </select>
+      </div>
+      <div class="legend">
+        <span><b style="background:#8fb7ff"></b>発生</span>
+        <span><b style="background:var(--accent)"></b>保持</span>
+        <span><b style="background:#e07a5f"></b>消滅</span>
+        <span><b style="background:#555b69"></b>束のずれ分</span>
+      </div>
+    </section>
+    <aside class="panel" id="panel">
+      <div class="presets" id="presets"><span class="lbl">プリセット</span></div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(() => {
+"use strict";
+
+/* ---------- parameters ---------- */
+const SCHEMA = [
+  {g:"出力", open:true, items:[
+    {k:"W", l:"幅", min:64, max:2000, step:1, d:600},
+    {k:"H", l:"高さ", min:64, max:2000, step:1, d:1400},
+    {k:"mTop", l:"上の余白", min:0, max:800, step:1, d:40},
+    {k:"mBot", l:"下の余白", min:0, max:800, step:1, d:40},
+    {k:"aa", l:"アンチエイリアス", t:"check", d:true},
+    {k:"prefix", l:"ファイル名", t:"text", d:"lightning"},
+  ]},
+  {g:"形", open:true, items:[
+    {k:"seed", l:"シード", t:"seed", d:1234},
+    {k:"thick", l:"太さ(px)", min:0.5, max:60, step:0.5, d:5},
+    {k:"endW", l:"終点側の太さ%", min:0, max:150, step:1, d:45},
+    {k:"amp", l:"振れ幅%", min:0, max:40, step:0.5, d:10},
+    {k:"detail", l:"細かさ", min:3, max:10, step:1, d:7},
+    {k:"rough", l:"ギザギザ", min:0.3, max:0.8, step:0.01, d:0.55},
+  ]},
+  {g:"分岐", open:true, items:[
+    {k:"bProb", l:"分岐の確率%", min:0, max:100, step:1, d:35},
+    {k:"bMax", l:"最大分岐数", min:0, max:8, step:1, d:3},
+    {k:"bLen", l:"枝の長さ%", min:5, max:90, step:1, d:30},
+    {k:"bAngle", l:"枝の角度°", min:5, max:80, step:1, d:28},
+    {k:"bW", l:"枝の太さ%", min:10, max:100, step:1, d:55},
+    {k:"sub", l:"枝からも分岐", t:"check", d:false},
+  ]},
+  {g:"束", open:false, items:[
+    {k:"strands", l:"本数", min:1, max:8, step:1, d:1},
+    {k:"sSpread", l:"始点側の広がり", min:0, max:1000, step:1, d:60},
+    {k:"eSpread", l:"終点側の広がり", min:0, max:1000, step:1, d:160},
+    {k:"wVar", l:"太さのばらつき%", min:0, max:80, step:1, d:35},
+    {k:"stagger", l:"発生のずれ(f)", min:0, max:12, step:1, d:2},
+  ]},
+  {g:"タイミング (24fps)", open:true, items:[
+    {k:"grow", l:"発生(f)", min:1, max:24, step:1, d:3},
+    {k:"hold", l:"保持(f)", min:0, max:72, step:1, d:8},
+    {k:"decay", l:"消滅(f)", min:1, max:48, step:1, d:10},
+    {k:"koma", l:"コマ打ち", t:"select", d:"1", opts:[["1","1コマ打ち"],["2","2コマ打ち"],["3","3コマ打ち"]]},
+  ]},
+  {g:"消え方", open:true, items:[
+    {k:"dir", l:"消える向き", t:"select", d:"s2e", opts:[["s2e","始点 → 終点"],["e2s","終点 → 始点"],["ends","両端 → 中央"],["center","中央 → 両端"]]},
+    {k:"bEarly", l:"枝が先に消える%", min:0, max:100, step:1, d:50},
+    {k:"fray", l:"消え際の千切れ%", min:0, max:100, step:1, d:40},
+    {k:"thin", l:"消えながら細る%", min:0, max:100, step:1, d:30},
+  ]},
+  {g:"揺らぎ・明滅", open:true, items:[
+    {k:"jitter", l:"形の揺らぎ%", min:0, max:100, step:1, d:20},
+    {k:"jEvery", l:"揺らぎの間隔(f)", min:1, max:6, step:1, d:2},
+    {k:"blink", l:"抜けコマ%", min:0, max:50, step:1, d:8},
+    {k:"wFlick", l:"太さの明滅%", min:0, max:80, step:1, d:25},
+  ]},
+  {g:"まとめて書き出し", open:true, items:[
+    {k:"vCount", l:"本数", min:2, max:30, step:1, d:5},
+    {k:"vSeed", l:"シードの決め方", t:"select", d:"seq", opts:[["seq","今のシードから連番"],["rand","ランダム"]]},
+    {k:"vVar", l:"パラメータのばらつき%", min:0, max:50, step:1, d:0},
+    {k:"_batch", l:"", t:"action", text:"まとめてzipで保存"},
+  ]},
+];
+const VAR_KEYS = ["thick","endW","amp","rough","bProb","bLen","bAngle","bW","jitter"];
+const PRESETS = {
+  "標準": {},
+  "2股": {bProb:100, bMax:1, bLen:55, bAngle:18, bW:85, sub:false, strands:1},
+  "放電の束": {strands:4, sSpread:90, eSpread:260, wVar:45, stagger:2, thick:3, amp:8, bProb:25, bMax:2, bLen:22},
+  "枝多め": {thick:4, bProb:70, bMax:6, bLen:26, bAngle:35, sub:true, strands:1},
+};
+const OUTPUT_KEYS = new Set(["W","H","mTop","mBot","aa","prefix","seed","vCount","vSeed","vVar","_batch"]);
+const ALL = SCHEMA.flatMap(g => g.items);
+const DEF = Object.fromEntries(ALL.map(i => [i.k, i.d]));
+const P = {...DEF};
+const STORE = "caprame-lightning";
+try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s) for (const k in s) if (k in DEF) P[k] = s[k]; } catch (e) {}
+function persist(){ try { localStorage.setItem(STORE, JSON.stringify(P)); } catch (e) {} }
+
+/* ---------- random ---------- */
+function hash(...n){
+  let h = 2166136261 >>> 0;
+  for (const x of n){ h ^= (x | 0); h = Math.imul(h, 16777619); h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15; }
+  return (h >>> 0) / 4294967296;
+}
+const hi = (...n) => Math.floor(hash(...n) * 4294967296) >>> 0;
+function rng(seed){
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function disp(seed, node, jk, jam){
+  const b = rng(hi(seed, node, 1)), j = rng(hi(seed, node, jk + 1000));
+  return () => (b() * 2 - 1) + jam * (j() * 2 - 1);
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const rot = (v, a) => ({x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a)});
+
+/* ---------- geometry ---------- */
+function genBolt(A, B, levels, amp, rough, d){
+  let pts = [A, B];
+  let a = amp * Math.hypot(B.x - A.x, B.y - A.y);
+  for (let l = 0; l < levels; l++){
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++){
+      const p = pts[i], q = pts[i + 1];
+      const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
+      const o = d() * a;
+      out.push({x: (p.x + q.x) / 2 - dy / L * o, y: (p.y + q.y) / 2 + dx / L * o});
+      out.push(q);
+    }
+    pts = out; a *= rough;
+  }
+  const par = [0]; let acc = 0;
+  for (let i = 1; i < pts.length; i++){ acc += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y); par.push(acc); }
+  const len = acc || 1;
+  for (let i = 0; i < par.length; i++) par[i] /= len;
+  return {pts, par, len, kids: []};
+}
+const levelsFor = ratio => clamp(P.detail + Math.round(Math.log2(Math.max(ratio, 0.01))), 2, P.detail);
+
+function strandInfos(){
+  const N = P.strands, arr = [];
+  for (let i = 0; i < N; i++){
+    const r = rng(hi(P.seed, i, 99));
+    const r1 = r(), r2 = r(), r3 = r(), r4 = r();
+    const f = N === 1 ? 0 : i / (N - 1) - 0.5;
+    arr.push({
+      seed: hi(P.seed, i, 7),
+      sx: P.W / 2 + f * P.sSpread + (N > 1 ? (r1 - 0.5) * P.sSpread / N * 0.5 : 0),
+      ex: P.W / 2 + f * P.eSpread + (N > 1 ? (r2 - 0.5) * P.eSpread / N * 0.5 : 0),
+      wScale: N > 1 ? 1 - P.wVar / 100 * r3 : 1,
+      delay: i === 0 ? 0 : Math.round(r4 * P.stagger),
+    });
+  }
+  return arr;
+}
+
+function buildStrand(s, jk){
+  const jam = P.jitter / 100;
+  const A = {x: s.sx, y: P.mTop}, B = {x: s.ex, y: P.H - P.mBot};
+  const base = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+  const main = genBolt(A, B, P.detail, P.amp / 100, P.rough, disp(s.seed, 1, jk, jam));
+  const dm = {x: (B.x - A.x) / base, y: (B.y - A.y) / base};
+  const sr = rng(hi(s.seed, 77));
+  for (let b = 0; b < 8; b++){
+    const r = [sr(), sr(), sr(), sr(), sr()];
+    const subR = [[sr(), sr(), sr(), sr(), sr()], [sr(), sr(), sr(), sr(), sr()]];
+    if (b >= P.bMax || r[0] >= P.bProb / 100) continue;
+    const idx = Math.round((0.1 + 0.72 * r[1]) * (main.pts.length - 1));
+    const O = main.pts[idx];
+    const side = r[2] < 0.5 ? -1 : 1;
+    const ang = side * P.bAngle * (0.6 + 0.8 * r[3]) * Math.PI / 180;
+    const len = base * P.bLen / 100 * (0.6 + 0.8 * r[4]);
+    const dv = rot(dm, ang);
+    const E = {x: O.x + dv.x * len, y: O.y + dv.y * len};
+    const ch = genBolt(O, E, levelsFor(len / base), P.amp / 100 * 1.15, P.rough, disp(s.seed, 100 + b, jk, jam));
+    ch.origin = main.par[idx]; ch.k = ch.len / main.len;
+    if (P.sub){
+      for (let c = 0; c < 2; c++){
+        const q = subR[c];
+        if (q[0] >= P.bProb / 100 * 0.7) continue;
+        const j = Math.round((0.15 + 0.6 * q[1]) * (ch.pts.length - 1));
+        const O2 = ch.pts[j];
+        const s2 = q[2] < 0.5 ? -1 : 1;
+        const a2 = s2 * P.bAngle * (0.5 + 0.8 * q[3]) * Math.PI / 180;
+        const l2 = len * (0.3 + 0.4 * q[4]);
+        const d2 = rot(dv, a2);
+        const E2 = {x: O2.x + d2.x * l2, y: O2.y + d2.y * l2};
+        const g = genBolt(O2, E2, levelsFor(l2 / base), P.amp / 100 * 1.2, P.rough, disp(s.seed, 1000 + b * 10 + c, jk, jam));
+        g.origin = ch.par[j]; g.k = g.len / ch.len;
+        ch.kids.push(g);
+      }
+    }
+    main.kids.push(ch);
+  }
+  return main;
+}
+
+/* ---------- intervals ---------- */
+function subtract(iv, gaps){
+  let out = iv;
+  for (const [g0, g1] of gaps){
+    const n = [];
+    for (const [a, b] of out){
+      if (g1 <= a || g0 >= b){ n.push([a, b]); continue; }
+      if (g0 > a) n.push([a, g0]);
+      if (g1 < b) n.push([g1, b]);
+    }
+    out = n;
+  }
+  return out;
+}
+const inIv = (u, iv) => iv.some(([a, b]) => u >= a && u <= b);
+
+function decayIntervals(e){
+  switch (P.dir){
+    case "e2s": return {iv: [[0, 1 - e]], edges: [{pos: 1 - e, dir: -1}]};
+    case "ends": return {iv: [[e / 2, 1 - e / 2]], edges: [{pos: e / 2, dir: 1}, {pos: 1 - e / 2, dir: -1}]};
+    case "center": return {iv: [[0, 0.5 - e / 2], [0.5 + e / 2, 1]], edges: [{pos: 0.5 - e / 2, dir: -1}, {pos: 0.5 + e / 2, dir: 1}]};
+    default: return {iv: [[e, 1]], edges: [{pos: e, dir: 1}]};
+  }
+}
+function frayGaps(edges, key){
+  const amt = P.fray / 100;
+  if (amt <= 0) return [];
+  const r = rng(key), gaps = [];
+  const win = 0.05 + 0.2 * amt, n = Math.round(2 + 8 * amt);
+  for (const ed of edges){
+    for (let j = 0; j < n; j++){
+      const d = Math.pow(r(), 1.6) * win;
+      const len = (0.004 + 0.028 * r()) * (1 - d / win * 0.6) * (0.5 + amt);
+      const c = ed.pos + ed.dir * d;
+      gaps.push([c - len / 2, c + len / 2]);
+    }
+  }
+  return gaps;
+}
+
+/* ---------- drawing ---------- */
+function drawPath(ctx, node, iv, wf){
+  const {pts, par} = node;
+  for (const [a, b] of iv){
+    if (b - a <= 1e-6) continue;
+    for (let i = 0; i < pts.length - 1; i++){
+      const p0 = par[i], p1 = par[i + 1];
+      if (p1 <= a || p0 >= b) continue;
+      const span = (p1 - p0) || 1e-9;
+      const t0 = Math.max(0, (a - p0) / span), t1 = Math.min(1, (b - p0) / span);
+      const P0 = pts[i], P1 = pts[i + 1];
+      ctx.lineWidth = Math.max(0.5, wf((Math.max(p0, a) + Math.min(p1, b)) / 2));
+      ctx.beginPath();
+      ctx.moveTo(lerp(P0.x, P1.x, t0), lerp(P0.y, P1.y, t0));
+      ctx.lineTo(lerp(P0.x, P1.x, t1), lerp(P0.y, P1.y, t1));
+      ctx.stroke();
+    }
+  }
+}
+function drawKids(ctx, parent, parentFront, parentVis, wAt, e, phase, depth){
+  for (const ch of parent.kids){
+    if (!parentVis(ch.origin)) continue;
+    let vis = 1, cf = Infinity;
+    if (phase === "grow"){ cf = (parentFront - ch.origin) / ch.k; vis = Math.min(1, cf); }
+    else if (phase === "decay"){
+      const eB = lerp(1, 0.15, P.bEarly / 100) * Math.pow(0.7, depth - 1);
+      vis = 1 - clamp(e / eB, 0, 1);
+    }
+    if (vis <= 0.001) continue;
+    const wO = wAt(ch.origin) * P.bW / 100;
+    const wf = u => wO * lerp(1, 0.2, u);
+    drawPath(ctx, ch, [[0, vis]], wf);
+    drawKids(ctx, ch, cf, u => u <= vis, wf, e, phase, depth + 1);
+  }
+}
+function phaseOf(local){
+  const G = P.grow, Hh = P.hold, D = P.decay;
+  if (local < 0) return {phase: "wait"};
+  if (local < G){ const x = (local + 1) / G; return {phase: "grow", front: 1 - (1 - x) * (1 - x)}; }
+  if (local < G + Hh) return {phase: "hold"};
+  if (local < G + Hh + D) return {phase: "decay", e: (local - G - Hh + 1) / (D + 1)};
+  return {phase: "done"};
+}
+function drawStrand(ctx, s, fe){
+  const st = phaseOf(fe - s.delay);
+  if (st.phase === "wait" || st.phase === "done") return;
+  if (st.phase === "hold" && hash(s.seed, fe, 31) < P.blink / 100) return;
+  const e = st.e || 0;
+  let wMul = 1 - P.wFlick / 100 * hash(s.seed, fe, 57);
+  if (st.phase === "decay") wMul *= 1 - P.thin / 100 * e;
+  const main = buildStrand(s, Math.floor(fe / P.jEvery));
+  let iv, front = Infinity;
+  if (st.phase === "grow"){ front = st.front; iv = [[0, front]]; }
+  else if (st.phase === "hold") iv = [[0, 1]];
+  else {
+    const di = decayIntervals(e);
+    iv = di.iv;
+    const gaps = frayGaps(di.edges, hi(s.seed, fe, 91));
+    const wAtMain = t => P.thick * s.wScale * wMul * lerp(1, P.endW / 100, t);
+    drawPath(ctx, main, subtract(iv, gaps), wAtMain);
+    drawKids(ctx, main, front, u => inIv(u, iv), wAtMain, e, "decay", 1);
+    return;
+  }
+  const wAtMain = t => P.thick * s.wScale * wMul * lerp(1, P.endW / 100, t);
+  drawPath(ctx, main, iv, wAtMain);
+  drawKids(ctx, main, front, u => inIv(u, iv), wAtMain, e, st.phase, 1);
+}
+function threshold(ctx){
+  const img = ctx.getImageData(0, 0, P.W, P.H), d = img.data;
+  for (let i = 0; i < d.length; i += 4){
+    if (d[i + 3] >= 128){ d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+    else d[i + 3] = 0;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+let infos = [];
+function renderFrame(ctx, f){
+  ctx.clearRect(0, 0, P.W, P.H);
+  ctx.strokeStyle = "#fff"; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const k = +P.koma, fe = Math.floor(f / k) * k;
+  for (const s of infos) drawStrand(ctx, s, fe);
+  if (!P.aa) threshold(ctx);
+}
+function totalFrames(){
+  const md = infos.reduce((m, s) => Math.max(m, s.delay), 0);
+  return md + P.grow + P.hold + P.decay;
+}
+function checkOverflow(){
+  const m = P.thick / 2 + 1;
+  const walk = n => n.pts.some(p => p.x < m || p.y < m || p.x > P.W - m || p.y > P.H - m) || n.kids.some(walk);
+  return infos.some(s => walk(buildStrand(s, 0)));
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d", {willReadFrequently: false});
+const panel = $("panel"), view = $("view");
+const ctrls = {};
+
+function fmt(v, step){ const dp = (String(step).split(".")[1] || "").length; return Number(v).toFixed(dp); }
+function setVal(k, v, fromUser){
+  const it = ALL.find(i => i.k === k);
+  if (!it) return;
+  if (!it.t){ v = clamp(Number(v), it.min, it.max); if (Number.isNaN(v)) v = it.d; }
+  if (it.t === "seed"){ v = Math.max(0, Math.floor(Number(v) || 0)); }
+  P[k] = v;
+  const c = ctrls[k];
+  if (c){
+    if (!it.t){ c.range.value = v; if (document.activeElement !== c.num || !fromUser) c.num.value = fmt(v, it.step); }
+    else if (it.t === "check") c.input.checked = !!v;
+    else c.input.value = v;
+  }
+}
+
+function buildPanel(){
+  const pre = $("presets");
+  for (const name in PRESETS){
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.textContent = name;
+    b.addEventListener("click", () => applyPreset(name));
+    pre.appendChild(b);
+  }
+  for (const grp of SCHEMA){
+    const det = document.createElement("details");
+    det.className = "grp"; det.open = grp.open;
+    const sum = document.createElement("summary"); sum.textContent = grp.g; det.appendChild(sum);
+    const rows = document.createElement("div"); rows.className = "rows"; det.appendChild(rows);
+    for (const it of grp.items){
+      const row = document.createElement("div");
+      const id = "p_" + it.k;
+      if (it.t === "action"){
+        row.className = "rowbtn";
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn primary"; b.id = "batchZip"; b.textContent = it.text;
+        const hint = document.createElement("span");
+        hint.className = "hint"; hint.id = "batchHint";
+        row.append(b, hint);
+        rows.appendChild(row);
+        continue;
+      }
+      const lab = document.createElement("label"); lab.textContent = it.l; lab.htmlFor = id;
+      row.appendChild(lab);
+      if (!it.t){
+        row.className = "row";
+        const range = document.createElement("input");
+        range.type = "range"; range.min = it.min; range.max = it.max; range.step = it.step; range.id = id;
+        const num = document.createElement("input");
+        num.type = "number"; num.className = "num"; num.min = it.min; num.max = it.max; num.step = it.step; num.id = id + "_n";
+        num.setAttribute("aria-label", it.l);
+        range.addEventListener("input", () => { setVal(it.k, range.value); changed(); });
+        num.addEventListener("change", () => { setVal(it.k, num.value); changed(); });
+        row.append(range, num);
+        ctrls[it.k] = {range, num};
+      } else if (it.t === "check"){
+        row.className = "row wide";
+        const sw = document.createElement("span"); sw.className = "sw";
+        const input = document.createElement("input"); input.type = "checkbox"; input.id = id;
+        const knob = document.createElement("span");
+        sw.append(input, knob);
+        input.addEventListener("change", () => { setVal(it.k, input.checked); changed(); });
+        row.appendChild(sw);
+        ctrls[it.k] = {input};
+      } else if (it.t === "select"){
+        row.className = "row wide";
+        const input = document.createElement("select"); input.id = id;
+        for (const [v, t] of it.opts){ const o = document.createElement("option"); o.value = v; o.textContent = t; input.appendChild(o); }
+        input.addEventListener("change", () => { setVal(it.k, input.value); changed(); });
+        row.appendChild(input);
+        ctrls[it.k] = {input};
+      } else if (it.t === "text"){
+        row.className = "row wide";
+        const input = document.createElement("input"); input.type = "text"; input.id = id; input.spellcheck = false;
+        input.addEventListener("input", () => { P[it.k] = input.value; persist(); });
+        row.appendChild(input);
+        ctrls[it.k] = {input};
+      } else if (it.t === "seed"){
+        row.className = "row wide";
+        const box = document.createElement("div"); box.className = "seedbox";
+        const input = document.createElement("input"); input.type = "number"; input.className = "num"; input.id = id; input.min = 0; input.step = 1;
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "btn"; btn.textContent = "ランダム";
+        input.addEventListener("change", () => { setVal("seed", input.value); changed(); });
+        btn.addEventListener("click", () => { setVal("seed", Math.floor(Math.random() * 99999)); changed(); });
+        box.append(input, btn);
+        row.appendChild(box);
+        ctrls[it.k] = {input};
+      }
+      rows.appendChild(row);
+    }
+    panel.appendChild(det);
+  }
+  const note = document.createElement("div");
+  note.className = "note";
+  note.innerHTML = "白一色の透過PNGを書き出します。色・グローはAE側で付けてください。<br>始点は上、終点は下。ショートカット：<kbd>Space</kbd> 再生/停止、<kbd>←</kbd><kbd>→</kbd> コマ送り。";
+  panel.appendChild(note);
+  for (const it of ALL) setVal(it.k, P[it.k]);
+}
+
+function applyPreset(name){
+  for (const it of ALL) if (!OUTPUT_KEYS.has(it.k)) setVal(it.k, it.d);
+  const p = PRESETS[name];
+  for (const k in p) setVal(k, p[k]);
+  if (P.strands > 1){ const d = [...panel.querySelectorAll("details")].find(x => x.querySelector("summary").textContent === "束"); if (d) d.open = true; }
+  changed();
+}
+
+let cur = 0, total = 1, playing = false;
+function changed(){
+  persist();
+  infos = strandInfos();
+  total = totalFrames();
+  cur = Math.min(cur, total - 1);
+  if (cv.width !== P.W || cv.height !== P.H){ cv.width = P.W; cv.height = P.H; fit(); }
+  $("scrub").max = total - 1;
+  $("spec").textContent = `${P.W}×${P.H}px · ${total}f (${(total / 24).toFixed(2)}秒) · 24fps`;
+  $("warn").hidden = !checkOverflow();
+  const bh = $("batchHint");
+  if (bh) bh.textContent = `${P.vCount}本 × ${total}f = ${P.vCount * total}枚`;
+  drawTimeline();
+  draw();
+}
+function drawTimeline(){
+  const md = total - (P.grow + P.hold + P.decay);
+  const tl = $("tl"); tl.textContent = "";
+  for (const [cls, n] of [["g", P.grow], ["h", P.hold], ["d", P.decay], ["s", md]]){
+    if (n <= 0) continue;
+    const i = document.createElement("i"); i.className = cls; i.style.width = (n / total * 100) + "%"; tl.appendChild(i);
+  }
+}
+const PHASE_JA = {grow: "発生", hold: "保持", decay: "消滅", done: "束の残り", wait: "待機"};
+function draw(){
+  renderFrame(ctx, cur);
+  $("scrub").value = cur;
+  $("fno").textContent = `${String(cur + 1).padStart(3, "0")} / ${String(total).padStart(3, "0")}`;
+  const k = +P.koma, fe = Math.floor(cur / k) * k;
+  $("phase").textContent = PHASE_JA[phaseOf(fe).phase] || "";
+}
+function fit(){
+  const r = view.getBoundingClientRect();
+  const s = Math.min((r.width - 24) / P.W, (r.height - 24) / P.H, 4);
+  if (!(s > 0)) return;
+  cv.style.width = (P.W * s) + "px";
+  cv.style.height = (P.H * s) + "px";
+  $("zoom").textContent = Math.round(s * 100) + "%";
+}
+new ResizeObserver(fit).observe(view);
+
+/* playback */
+let last = 0, acc = 0, pauseUntil = 0;
+function tick(t){
+  if (!playing) return;
+  if (!last) last = t;
+  const dt = t - last; last = t;
+  if (t >= pauseUntil){
+    acc += dt;
+    const step = 1000 / (24 * Number($("speed").value));
+    while (acc >= step){
+      acc -= step;
+      if (cur >= total - 1){ cur = 0; pauseUntil = t + 300; acc = 0; break; }
+      cur++;
+    }
+    draw();
+  }
+  requestAnimationFrame(tick);
+}
+function setPlaying(v){
+  playing = v;
+  $("play").textContent = v ? "停止" : "再生";
+  if (v){ last = 0; acc = 0; requestAnimationFrame(tick); }
+}
+$("play").addEventListener("click", () => setPlaying(!playing));
+$("prev").addEventListener("click", () => { setPlaying(false); cur = (cur - 1 + total) % total; draw(); });
+$("next").addEventListener("click", () => { setPlaying(false); cur = (cur + 1) % total; draw(); });
+$("scrub").addEventListener("input", e => { setPlaying(false); cur = +e.target.value; draw(); });
+$("bg").addEventListener("change", e => { view.className = "view " + e.target.value; });
+document.addEventListener("keydown", e => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea") return;
+  if (e.code === "Space"){ e.preventDefault(); setPlaying(!playing); }
+  else if (e.key === "ArrowLeft"){ e.preventDefault(); $("prev").click(); }
+  else if (e.key === "ArrowRight"){ e.preventDefault(); $("next").click(); }
+});
+
+/* ---------- export ---------- */
+const status = msg => { $("status").textContent = msg; };
+const safeName = () => (String(P.prefix || "").trim().replace(/[\\/:*?"<>|\s]+/g, "_") || "lightning");
+async function saveFile(filename, blob){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  status("保存しました");
+}
+const toBlob = c => new Promise(r => c.toBlob(r, "image/png"));
+function busy(v){ for (const id of ["saveZip","savePng","batchZip"]){ const b = $(id); if (b) b.disabled = v; } }
+const pad = (n, w) => String(n).padStart(w, "0");
+
+/* batch: several variations into one zip, one folder each */
+async function batchExport(){
+  if (typeof JSZip === "undefined"){ status("zipライブラリを読み込めませんでした"); return; }
+  setPlaying(false); busy(true);
+  const snap = {...P}, name = safeName(), zip = new JSZip();
+  const N = P.vCount, vr = rng(hi(Date.now() & 0x7fffffff, 5));
+  const c = document.createElement("canvas"); c.width = P.W; c.height = P.H;
+  const cx = c.getContext("2d", {willReadFrequently: !P.aa});
+  try {
+    for (let v = 0; v < N; v++){
+      Object.assign(P, snap);
+      P.seed = snap.vSeed === "rand" ? Math.floor(vr() * 99999) : snap.seed + v;
+      if (snap.vVar > 0){
+        for (const k of VAR_KEYS){
+          const it = ALL.find(i => i.k === k);
+          const raw = snap[k] * (1 + (vr() * 2 - 1) * snap.vVar / 100);
+          P[k] = clamp(Math.round(raw / it.step) * it.step, it.min, it.max);
+        }
+      }
+      infos = strandInfos();
+      const tf = totalFrames();
+      const dir = zip.folder(`${name}_v${pad(v + 1, 2)}_seed${P.seed}`);
+      for (let f = 0; f < tf; f++){
+        status(`書き出し中 ${v + 1}/${N}本目 ${f + 1}/${tf}f`);
+        renderFrame(cx, f);
+        dir.file(`${name}_v${pad(v + 1, 2)}_${pad(f + 1, 4)}.png`, await toBlob(c));
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+  } finally {
+    Object.assign(P, snap);
+    infos = strandInfos();
+    draw();
+  }
+  status("zipを作成中…");
+  const out = await zip.generateAsync({type: "blob", compression: "STORE"});
+  await saveFile(`${name}_x${N}.zip`, out);
+  busy(false);
+}
+$("savePng").addEventListener("click", async () => {
+  busy(true);
+  const c = document.createElement("canvas"); c.width = P.W; c.height = P.H;
+  renderFrame(c.getContext("2d"), cur);
+  await saveFile(`${safeName()}_${String(cur + 1).padStart(4, "0")}.png`, await toBlob(c));
+  busy(false);
+});
+$("saveZip").addEventListener("click", async () => {
+  if (typeof JSZip === "undefined"){ status("zipライブラリを読み込めませんでした"); return; }
+  setPlaying(false); busy(true);
+  const zip = new JSZip(), name = safeName();
+  const c = document.createElement("canvas"); c.width = P.W; c.height = P.H;
+  const cx = c.getContext("2d", {willReadFrequently: !P.aa});
+  for (let f = 0; f < total; f++){
+    status(`書き出し中 ${f + 1}/${total}`);
+    renderFrame(cx, f);
+    zip.file(`${name}_${String(f + 1).padStart(4, "0")}.png`, await toBlob(c));
+    await new Promise(r => setTimeout(r, 0));
+  }
+  status("zipを作成中…");
+  const out = await zip.generateAsync({type: "blob", compression: "STORE"});
+  await saveFile(`${name}.zip`, out);
+  busy(false);
+});
+
+buildPanel();
+$("batchZip").addEventListener("click", batchExport);
+changed();
+cur = P.grow + Math.floor(P.hold / 2);
+cur = Math.min(cur, total - 1);
+draw();
+})();
+</script>
+</body>
+</html>
